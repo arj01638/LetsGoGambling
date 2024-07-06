@@ -4,7 +4,6 @@ from treys import Card, Evaluator, Deck
 from poker.hand import Range
 from poker.card import Card as PokerCard
 
-
 # hand rankings:
 # 9: high card
 # 8: one pair
@@ -200,7 +199,9 @@ def calculate_equity(hole_cards, num_opponents, community_cards=None, simulation
             diff = 9 - board_class
             for i in range(num_opponents):
                 eval_result = evaluator.evaluate(opponent_hole_cards[i], board)
-                if (evaluator.get_rank_class(eval_result) <= threshold_hand_strength - diff
+                if (evaluator.get_rank_class(eval_result) <=
+                    threshold_hand_strength - (
+                            diff if threshold_hand_strength == 8 else 0)  # max(threshold_hand_strength - diff, 7)
                 if board_class >= 8 else eval_result < board_rank):
                     # the if-else here means if the board has two pair or better on it,
                     # instead of assuming opponent has better than two pair,
@@ -208,6 +209,7 @@ def calculate_equity(hole_cards, num_opponents, community_cards=None, simulation
                     # and (eval_result >= our_rank if chop_is_win else eval_result > our_rank)
                     # and had_pair_or_draw_on_flop(opponent_hole_cards[i], board,
                     #                              evaluator) if not is_flop else True):
+
                     threshold_satisfieds += 1
                     if threshold_satisfieds >= threshold_players:
                         break

@@ -16,13 +16,22 @@ def get_threshold(board_cards, num_opponents, game_stage, pot_odds, going_all_in
     flush_draw = has_flush_draw(board_cards)
     if flush_draw:
         print("Flush draw on board!")
-        threshold = 7
+        if current_bet > 0:
+            threshold = 6
+            if flags["reraise"]:
+                print("We've been reraised, assume flush")
+                threshold = 5
+        else:
+            threshold = 7
         # otherwise, the bot will wayyyyy overvalue low flushes like 4 high
     elif current_bet > middle_pot_value and game_stage != 0:
         print("Threatening bet, someone bet pot, assume 2 pair or better")
         threshold = 7
     elif current_bet > big_blind * 10 and game_stage == 0:
         print("Threatening bet, someone bet > 10 BB, assume high percentile hand")
+        threshold = 7
+    elif current_bet > middle_pot_value // 2 and flags["reraise"]:
+        print("Threatening bet, reraised us with a large bet, assume 2 pair or better")
         threshold = 7
     elif pot_odds < lotto_chance:
         print("Pot odds less than random chance")
@@ -125,6 +134,8 @@ def make_decision(hole_cards, board_cards, stack_size, pot_value, current_bet,
 
     if play_this_hand or game_stage > 0:
         threshold_players = max(2, -(num_opponents // -2))
+        if threshold <= 7 and game_stage > 0:
+            threshold_players = 1
         if game_stage == 3:
             threshold_players += 1
         if threshold_players > num_opponents:
@@ -161,13 +172,21 @@ def make_decision(hole_cards, board_cards, stack_size, pot_value, current_bet,
             print(f"{equity} < {pot_odds}, folding")
             return fold_or_check(current_bet)
 
-        # calculating ideal bet becomes negative after 50% equity,
-        # and you want to bet not a great amount usually anyway right?
-        betting_equity = equity / 2
-        if game_stage == 3 and pot_value >= 75 * big_blind:
-            print("River, big pot, dont bet a lot pls")
+        if game_stage == 3 and pot_value >= 50 * big_blind and num_opponents <= 2 and threshold == 8:
+            betting_equity = calculate_equity(hole_cards,
+                                              num_opponents,
+                                              board_cards,
+                                              chop_is_win=True,
+                                              threshold_hand_strength=7,
+                                              threshold_players=1)
+            print(f"River, big pot, <=2 ops, calculate betting equity w threshold 7 ({betting_equity})")
+        elif equity < 0.7 and game_stage == 3 and pot_value >= 50 * big_blind:
+            print("River, big pot, <60% equity, dont bet a lot pls")
             betting_equity = equity / 3
-
+        else:
+            # calculating ideal bet becomes negative after 50% equity,
+            # and you want to bet not a great amount usually anyway right?
+            betting_equity = equity / 2
         if equity > 0.9:
             ideal_bet = stack_size
         elif current_bet <= big_blind and game_stage == 0:
@@ -183,10 +202,12 @@ def make_decision(hole_cards, board_cards, stack_size, pot_value, current_bet,
                     equity = 1
             ideal_bet = raise_factor * big_blind
         elif equity < (1 / (num_opponents + 1) / 2):
+            print("I REALLY don't think we're winning this one boys")
             ideal_bet = 0
         else:
             if equity < (1 / (num_opponents + 1)):
-                betting_equity = equity / 3
+                print("I don't think we're winning this one boys")
+                betting_equity = betting_equity / 3
             # calculating the bet at which the pot odds are equal to the equity
             ideal_bet = (betting_equity * middle_pot_value) / (1 - (2 * betting_equity))
             print(f"Ideal bet: {ideal_bet}")

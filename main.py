@@ -20,7 +20,7 @@ class PokerBot:
         self.debug = False  # add debug windows and console messages
         self.skip_cards = False  # skip card detection
         self.continuous = False  # determines whether it'll loop or just run once
-        self.big_blind = 200  # it will automatically determine this by constantly checking for the minimum bet
+        self.big_blind = 100  # it will automatically determine this by constantly checking for the minimum bet
         # but i specify it here just so it doesn't potentially bug out the first hand or two
 
         self.screenshot = None
@@ -61,7 +61,7 @@ class PokerBot:
         # this is all the bot has when it comes to "memory"
         # street is the last street it remembers, not currently used
         # threshold is the minimum threshold it has used during the hand (reset every preflop)
-        self.flags = {"street": 0, "threshold": 9}
+        self.flags = {"street": 0, "threshold": 9, "reraise": False}
 
         # initializing suit templates
         suits = ['s', 'c', 'h', 'd']
@@ -136,7 +136,7 @@ class PokerBot:
             return binary_image
 
     def ocr_text_from_image(self, location, rotation_angle=0, psm=7, blur_size=3, invert=False, colored_text=False,
-                            erode=False, brightness=3.0, contrast=0.0, hoz_stretch=0.0):
+                            erode=False, brightness=3.0, contrast=0.0, hoz_stretch=0.0, flip=False):
         # if self.debug:
         # show the location subsection of the screenshot
         # cv2.imshow('location', np.array(self.screenshot.crop(location)))
@@ -148,6 +148,10 @@ class PokerBot:
             image = Image.fromarray(image)
             image = image.rotate(rotation_angle, resample=Resampling.BICUBIC, fillcolor=(255, 255, 255))
             image = np.array(image)
+
+        # flip and mirror the image
+        if flip:
+            image = cv2.flip(image, -1)
 
         if not invert and not colored_text:
             image = cv2.convertScaleAbs(image, alpha=brightness, beta=0)
@@ -197,6 +201,15 @@ class PokerBot:
         # scale height to 33 pixels using bicubic resampling
         gray = cv2.resize(gray, (0, 0), fx=35 / gray.shape[0], fy=35 / gray.shape[0], interpolation=cv2.INTER_CUBIC)
 
+        # i know this effect better as feathering but everyone calls it erosion
+        if erode:
+            gray = cv2.bitwise_not(gray)
+            gray = cv2.resize(gray, (0, 0), fx=2, fy=2)
+            kernel = np.ones((2, 2), np.uint8)
+            gray = cv2.erode(gray, kernel, iterations=1)
+            gray = cv2.resize(gray, (0, 0), fx=0.5, fy=0.5)
+            gray = cv2.bitwise_not(gray)
+
         # Apply binary thresholding
         _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
@@ -213,15 +226,6 @@ class PokerBot:
         if blur_size != 1:
             binary = cv2.bitwise_not(binary)
             binary = cv2.medianBlur(binary, blur_size)
-            binary = cv2.bitwise_not(binary)
-
-        # i know this effect better as feathering but everyone calls it erosion
-        if erode:
-            binary = cv2.bitwise_not(binary)
-            binary = cv2.resize(binary, (0, 0), fx=2, fy=2)
-            kernel = np.ones((2, 2), np.uint8)
-            binary = cv2.erode(binary, kernel, iterations=1)
-            binary = cv2.resize(binary, (0, 0), fx=0.5, fy=0.5)
             binary = cv2.bitwise_not(binary)
 
         # Prepare a padding color
@@ -242,7 +246,15 @@ class PokerBot:
         if self.debug:
             print(f'OCR result: {result}')
         # can you tell what number has given me hours of trouble with tesseract and TJ font
-        return '10' if any(result == char for char in ['0', 'O', '1', 'I', "70", "1O", "IO", "I0", "7O"]) else result
+        if any(result == char for char in ['1', 'I', "70", "1O", "IO", "I0", "7O"]):
+            return '10'
+        if any(result == char for char in ['0', 'O']) and not flip:
+            if self.ocr_text_from_image(location, rotation_angle, psm, blur_size, invert, colored_text, erode,
+                                        brightness, contrast, hoz_stretch, flip=True) == '9':
+                return '6'
+            else:
+                return '10'
+        return result
 
     def find_and_click(self, image_path, clicks=1):
         element = self.find_element(image_path)
@@ -326,19 +338,20 @@ class PokerBot:
         angles = {1: -5, 2: -3, 3: 0, 4: 3, 5: 5}
 
         card_value = self.ocr_text_from_image(value_location,
-                                              rotation_angle=4 if hole_card else angles[board_card_number],
+                                              rotation_angle=3 if hole_card else angles[board_card_number],
                                               psm=10,
                                               blur_size=1,
                                               brightness=3,
                                               contrast=2,
-                                              hoz_stretch=1.1 if not hole_card else 0.0,
+                                              hoz_stretch=1.15 if not hole_card else 0.0,
                                               erode=True)
         if not hole_card and card_value not in ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']:
             print(f'Board card {board_card_number} not visible ({card_value})')
             return 0, '0'
         else:
             card_value = self.map_card_value(card_value)
-            print(f'Found card with value: {card_value}')
+            if self.debug:
+                print(f'Found card with value: {card_value}')
 
         if self.debug:
             cv2.imshow('suit_location', np.array(self.screenshot.crop(suit_location)))
@@ -380,7 +393,8 @@ class PokerBot:
             print(f'Could not find suit with enough confidence')
             for suit, confidence in confidences.items():
                 print(f'{suit}: {confidence}')
-        print(f'Found card with suit: {card_suit} (Confidence: {confidences[card_suit]})')
+        if self.debug:
+            print(f'Found card with suit: {card_suit} (Confidence: {confidences[card_suit]})')
 
         return card_value, card_suit
 
@@ -435,9 +449,15 @@ class PokerBot:
                 print(f'Current bet: {current_bet}')
                 min_bet = self.get_min_bet(current_bet, stack_size)
 
-                if (not (board_cards == [] and current_bet >= 10 * self.big_blind)
-                        and not current_bet >= stack_size
-                        and not (not current_bet <= self.big_blind * 3 and current_bet >= middle_pot_value)):
+                approximate_pot = True
+                if board_cards == [] and current_bet >= 10 * self.big_blind:
+                    approximate_pot = False
+                if current_bet >= stack_size:
+                    approximate_pot = False
+                if current_bet > self.big_blind * 5 and current_bet >= middle_pot_value:
+                    approximate_pot = False
+
+                if approximate_pot:
                     approximate_pot = math.floor(((num_opponents + 1) * current_bet) /
                                                  (1.5 if current_bet != self.big_blind else 1))
                     if pot_value < approximate_pot:
@@ -460,6 +480,10 @@ class PokerBot:
                 if game_stage == 0:
                     self.flags["threshold"] = 9
 
+                self.flags["reraise"] = False
+                if game_stage > 0:
+                    if self.flags["street"] == game_stage:
+                        self.flags["reraise"] = True
                 self.flags["street"] = game_stage
 
                 print(f"Flags: {self.flags}")
@@ -471,7 +495,7 @@ class PokerBot:
 
                 if decision:
                     if self.continuous:
-                        self.wait_random_time(decision, stack_size, pot_value, game_stage)
+                        self.wait_random_time(decision, current_bet, pot_value, game_stage)
                     if decision == "fold":
                         if not self.find_and_click('foldbutton.png'):
                             print('ERROR: Could not find fold button')
@@ -522,7 +546,7 @@ class PokerBot:
                     self.ocr_text_from_image((bet[0], bet[3] - 5, bet[2], bet[3] + (bet[3] - bet[1])),
                                              blur_size=1,
                                              colored_text=True,
-                                             contrast=2))
+                                             contrast=2.5))
             else:
                 raiseto = self.find_element('raisetobutton.png')
                 if raiseto:
@@ -530,7 +554,7 @@ class PokerBot:
                         self.ocr_text_from_image((raiseto[0], raiseto[3] - 5, raiseto[2],
                                                   raiseto[3] + (raiseto[3] - raiseto[1])), blur_size=1,
                                                  colored_text=True,
-                                                 contrast=2))
+                                                 contrast=2.5))
                 else:
                     allin = self.find_element('allinbutton.png')
                     if allin:
@@ -538,7 +562,7 @@ class PokerBot:
                             self.ocr_text_from_image((allin[0], allin[3] - 5, allin[2],
                                                       allin[3] + (allin[3] - allin[1])), blur_size=1,
                                                      colored_text=True,
-                                                     contrast=2))
+                                                     contrast=2.5))
                     else:
                         print('ERROR: Could not find min bet')
                         min_bet = 0
@@ -634,7 +658,7 @@ class PokerBot:
                   "callpopup.png", "postpopup.png", "popup.png"]
         for popup in popups:
             popup_locations = self.find_elements(popup, search_area=(233, 312, 1148, 724),
-                                                 confidence_threshold=0.85)
+                                                 confidence_threshold=0.8)
             if popup_locations:
                 for confidence, popup_location in popup_locations:
                     center_x = (popup_location[0] + popup_location[2]) // 2
@@ -700,7 +724,7 @@ class PokerBot:
         print(f'Board cards: {board_cards}')
         return board_cards, holecard1, holecard2
 
-    def wait_random_time(self, decision, stack_size, pot_value, game_stage):
+    def wait_random_time(self, decision, current_bet, pot_value, game_stage):
         if decision == "fold":
             return
         peak2_weight = 5
@@ -709,6 +733,8 @@ class PokerBot:
             if bet_amount >= pot_value:
                 peak2_weight -= 2
             if game_stage == 0:
+                peak2_weight += 3
+            if current_bet <= self.big_blind and game_stage != 0:
                 peak2_weight += 3
 
         samples = 1000
