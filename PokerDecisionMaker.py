@@ -24,20 +24,22 @@ def get_threshold(board_cards, num_opponents, game_stage, pot_odds, going_all_in
         else:
             threshold = 7
         # otherwise, the bot will wayyyyy overvalue low flushes like 4 high
-    elif current_bet > middle_pot_value and game_stage != 0:
+    elif current_bet >= middle_pot_value and game_stage != 0:
         print("Threatening bet, someone bet pot, assume 2 pair or better")
         threshold = 7
     elif current_bet > big_blind * 10 and game_stage == 0:
         print("Threatening bet, someone bet > 10 BB, assume high percentile hand")
         threshold = 7
     elif current_bet > max(middle_pot_value // 2, 10 * big_blind) and flags["reraise"]:
-        print("Threatening bet, reraised us with a large bet, assume 2 pair or better")
-        threshold = 7
+        print("Threatening bet, reraised us with a large bet, assume half the time 2 pair or better")
+        threshold = 7.5
     elif pot_odds < lotto_chance:
         print("Pot odds less than random chance")
         threshold = 8 if ((game_stage == 1 and (current_bet > 0))
                           or (game_stage == 0 and current_bet > (3 * big_blind))
                           or game_stage >= 2) else 9
+        if game_stage == 3 and middle_pot_value >= 50 * big_blind or current_bet >= 50 * big_blind:
+            threshold = 7.5
     elif lotto_chance <= pot_odds <= threatening_pot_odds_threshold:
         print(f"Pot odds less than {threatening_pot_odds_threshold}")
         threshold = 9 if game_stage == 0 and current_bet <= 3 * big_blind else 8
@@ -120,7 +122,7 @@ def make_decision(hole_cards, board_cards, stack_size, pot_value, current_bet,
             if random.random() < 0.5 and bb_stack > 50:
                 if is_in_percentile(60, hole_cards, num_opponents > 1):
                     play_this_hand = True
-                print("20% chance to play hand outside normal percentile hit")
+                print("50% chance to play hand outside normal percentile hit")
         if not play_this_hand:
             print("Folding hand outside percentile")
             return fold_or_check(current_bet)
@@ -132,8 +134,8 @@ def make_decision(hole_cards, board_cards, stack_size, pot_value, current_bet,
         elif is_in_percentile(10, hole_cards, num_opponents > 1):
             raise_factor = 5
         elif is_in_percentile(5, hole_cards, num_opponents > 1):
-            if random.random() < 0.1:
-                print("Shoving because 10% chance and top 5% hand")
+            if random.random() < 0.2:
+                print("Shoving because 20% chance and top 5% hand")
                 raise_factor = stack_size / big_blind
         ideal_bet = raise_factor * big_blind
         if current_bet < 0.75 * ideal_bet:
@@ -198,9 +200,9 @@ def make_decision(hole_cards, board_cards, stack_size, pot_value, current_bet,
                                           num_opponents,
                                           board_cards,
                                           chop_is_win=True,
-                                          threshold_hand_strength=7,
+                                          threshold_hand_strength=7.5,
                                           threshold_players=1)
-        print(f"River, big pot, <=2 ops, calculate betting equity w threshold 7 ({betting_equity})")
+        print(f"River, big pot, <=2 ops, calculate betting equity w threshold 7.5 ({betting_equity})")
         betting_equity = betting_equity / 2
     elif equity < 0.7 and game_stage == 3 and pot_value >= 50 * big_blind:
         print("River, big pot, <60% equity, dont bet a lot pls")
@@ -229,14 +231,14 @@ def make_decision(hole_cards, board_cards, stack_size, pot_value, current_bet,
     if 0.75 * ideal_bet <= current_bet or ideal_bet < min_bet:
         # BLUFFS
         if current_bet == 0:
-            bluff_frequency = 0.3 * (2 if flags["bluffing"] else 1) + 0.2 if game_stage == 0 else 0
+            bluff_frequency = 0.3 * (2 if flags["bluffing"] else 1) + 0.1 if game_stage != 0 else 0
             if pot_value <= max(0.025 * stack_size, 12) and random.random() < bluff_frequency:
-                print(f"Bluffing because no bet, small pot, and 30% hit")
+                print(f"Bluffing because no bet, small pot, and {bluff_frequency}% hit")
                 flags["bluffing"] = True
                 return f"bet {int((0.5 + (0.5 * random.random())) * pot_value)}"
             elif (pot_value <= max(0.05 * stack_size, 16) * big_blind
                   and game_stage == 3 and random.random() < bluff_frequency):
-                print(f"Bluffing because no bet, river, small pot and 30% hit")
+                print(f"Bluffing because no bet, river, small pot and {bluff_frequency}% hit")
                 flags["bluffing"] = True
                 return f"bet {int((0.5 + (0.5 * random.random())) * pot_value)}"
 
@@ -246,7 +248,7 @@ def make_decision(hole_cards, board_cards, stack_size, pot_value, current_bet,
     if current_bet < 0.75 * ideal_bet:
         # SLOW ROLLING
         if current_bet == 0:
-            if random.random() < 0.3 and (equity < 0.5 or game_stage < 2):
+            if random.random() < 0.3 and equity < 0.5:
                 print("Slow rolling because no bet and 30% hit and <50% equity")
                 return "call"
         if ideal_bet < 0.1 * pot_value:

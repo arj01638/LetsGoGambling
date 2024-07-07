@@ -1,3 +1,4 @@
+import random
 import time
 
 from treys import Card, Evaluator, Deck
@@ -142,6 +143,11 @@ def calculate_equity(hole_cards, num_opponents, community_cards=None, simulation
     # range_time = 0
     # winner_time = 0
     successful_simulations = 0
+    threshold = threshold_hand_strength
+    ceild = False
+    if threshold % 1 == 0.5:
+        threshold = threshold + 0.5
+        ceild = True
     # check if simulation_time ms have passed
     while time.time() - start_time < simulation_time / 1000 and successful_simulations < num_simulations:
         # winner_start_time = time.time()
@@ -194,14 +200,15 @@ def calculate_equity(hole_cards, num_opponents, community_cards=None, simulation
         our_rank = evaluator.evaluate(hole_cards, board)
 
         if game_stage != 0:
+            # if threshold_hand_strength ends in .5, pick randomly between ceil and floor
             board_rank = evaluator.evaluate([], board)
             board_class = evaluator.get_rank_class(board_rank)
             diff = 9 - board_class
             for i in range(num_opponents):
                 eval_result = evaluator.evaluate(opponent_hole_cards[i], board)
                 if (evaluator.get_rank_class(eval_result) <=
-                    threshold_hand_strength - (
-                            diff if threshold_hand_strength == 8 else 0)  # max(threshold_hand_strength - diff, 7)
+                    threshold - (
+                            diff if 6 < threshold < 9 else 0)  # max(threshold_hand_strength - diff, 7)
                 if board_class >= 8 else eval_result < board_rank):
                     # the if-else here means if the board has two pair or better on it,
                     # instead of assuming opponent has better than two pair,
@@ -216,6 +223,13 @@ def calculate_equity(hole_cards, num_opponents, community_cards=None, simulation
 
         if threshold_satisfieds >= threshold_players:
             successful_simulations += 1
+            if threshold_hand_strength % 1 == 0.5:
+                if ceild:
+                    threshold -= 1
+                    ceild = False
+                else:
+                    threshold += 1
+                    ceild = True
             if all((eval_result := evaluator.evaluate(opponent_hole_cards[i], board),
                     (eval_result >= our_rank if chop_is_win else eval_result > our_rank)
                     )[1] for i in range(num_opponents)):

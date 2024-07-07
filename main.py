@@ -21,7 +21,7 @@ class PokerBot:
         self.debug = False  # add debug windows and console messages
         self.skip_cards = False  # skip card detection
         self.continuous = False  # determines whether it'll loop or just run once
-        self.big_blind = 100  # it will automatically determine this by constantly checking for the minimum bet
+        self.big_blind = 200  # it will automatically determine this by constantly checking for the minimum bet
         # but i specify it here just so it doesn't potentially bug out the first hand or two
 
         self.screenshot = None
@@ -212,7 +212,7 @@ class PokerBot:
             gray = cv2.bitwise_not(gray)
 
         # Apply binary thresholding
-        _, binary = cv2.threshold(gray, 170, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
         if invert:
             binary = cv2.bitwise_not(binary)
@@ -319,7 +319,7 @@ class PokerBot:
             # zero out a thin stretch of wide area about 200 pixels wide but as tall as the template
             if block_wide:
                 res[max_loc[1] - 10:max_loc[1] + template.shape[0] + 10,
-                max_loc[0] - 200:max_loc[0] + template.shape[1] + 200] = 0
+                max_loc[0] - 220:max_loc[0] + template.shape[1] + 10] = 0
 
             # show new res
             if self.debug:
@@ -613,7 +613,7 @@ class PokerBot:
     def get_num_opponents(self):
         # tally up the amount of greenbar.png there is on screen and that's the number of opponents
         greenbars = self.find_elements('greenbar.png', search_area=(5, 181, 1343, 915),
-                                       confidence_threshold=0.85, block_wide=False)
+                                       confidence_threshold=0.85, block_wide=True)
 
         # supreme_justice
         supreme_justice = self.find_element('supreme_justice.png')
