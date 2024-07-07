@@ -1,3 +1,4 @@
+import datetime
 import math
 
 import pyautogui
@@ -61,7 +62,7 @@ class PokerBot:
         # this is all the bot has when it comes to "memory"
         # street is the last street it remembers, not currently used
         # threshold is the minimum threshold it has used during the hand (reset every preflop)
-        self.flags = {"street": 0, "threshold": 9, "reraise": False}
+        self.flags = {"street": 0, "threshold": 9, "reraise": False, "bluffing": False}
 
         # initializing suit templates
         suits = ['s', 'c', 'h', 'd']
@@ -211,7 +212,7 @@ class PokerBot:
             gray = cv2.bitwise_not(gray)
 
         # Apply binary thresholding
-        _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        _, binary = cv2.threshold(gray, 170, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
         if invert:
             binary = cv2.bitwise_not(binary)
@@ -321,10 +322,10 @@ class PokerBot:
                 max_loc[0] - 200:max_loc[0] + template.shape[1] + 200] = 0
 
             # show new res
-            # if self.debug:
-            #     cv2.imshow('res', res)
-            #     cv2.waitKey(0)
-            #     cv2.destroyAllWindows()
+            if self.debug:
+                cv2.imshow('res', res)
+                cv2.waitKey(0)
+                cv2.destroyAllWindows()
         return locations
 
     def min_max_loc(self, template, image):
@@ -449,6 +450,14 @@ class PokerBot:
                 print(f'Current bet: {current_bet}')
                 min_bet = self.get_min_bet(current_bet, stack_size)
 
+                if pot_value < middle_pot_value + current_bet:
+                    pot_value = middle_pot_value + current_bet
+                    current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+                    file = f"error_pot_{current_time}.png"
+                    print(f"ERROR:Pot value less than middle pot value + current bet, setting it to that"
+                          f"\n\tsaving screenshot as {file}")
+                    self.screenshot.save(file)
+
                 approximate_pot = True
                 if board_cards == [] and current_bet >= 10 * self.big_blind:
                     approximate_pot = False
@@ -479,6 +488,7 @@ class PokerBot:
 
                 if game_stage == 0:
                     self.flags["threshold"] = 9
+                    self.flags["bluffing"] = False
 
                 self.flags["reraise"] = False
                 if game_stage > 0:
@@ -603,7 +613,7 @@ class PokerBot:
     def get_num_opponents(self):
         # tally up the amount of greenbar.png there is on screen and that's the number of opponents
         greenbars = self.find_elements('greenbar.png', search_area=(5, 181, 1343, 915),
-                                       confidence_threshold=0.85, block_wide=True)
+                                       confidence_threshold=0.85, block_wide=False)
 
         # supreme_justice
         supreme_justice = self.find_element('supreme_justice.png')
@@ -761,7 +771,8 @@ if __name__ == "__main__":
         except Exception as e:
             print(f'An error occurred: {e}')
             cv2.destroyAllWindows()
-            file_name = f"error_{random.randint(1000000, 9999999)}.png"
+            time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            file_name = f"error_{time}.png"
             bot.screenshot.save(file_name)
             print(f"Screenshot saved as {file_name}")
             raise e
