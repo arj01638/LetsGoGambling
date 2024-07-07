@@ -275,7 +275,7 @@ class PokerBot:
             return '10'
         if any(result == char for char in ['0', 'O']) and not flip:
             if self.ocr_text_from_image(location, rotation_angle, psm, blur_size, invert, colored_text, erode,
-                                        brightness, contrast, hoz_stretch, flip=True) == '9':
+                                        brightness, contrast, flip=True) == '9':
                 return '6'
             else:
                 return '10'
@@ -464,9 +464,22 @@ class PokerBot:
                 else:
                     board_cards, holecard1, holecard2 = [], (0, '0'), (0, '0')
 
+                if not board_cards:
+                    print('PREFLOP')
+                    game_stage = 0
+                elif len(board_cards) == 3:
+                    print('FLOP')
+                    game_stage = 1
+                elif len(board_cards) == 4:
+                    print('TURN')
+                    game_stage = 2
+                else:
+                    print('RIVER')
+                    game_stage = 3
+
                 stack_size = self.get_stack_size()
 
-                pot_value, middle_pot_value = self.get_pot(stack_size)
+                pot_value, middle_pot_value = self.get_pot(stack_size, game_stage)
 
                 num_opponents = self.get_num_opponents()
 
@@ -495,19 +508,6 @@ class PokerBot:
                     if pot_value < approximate_pot:
                         print(f"Pot value less than {approximate_pot}, setting it to that")
                         pot_value = approximate_pot
-
-                if not board_cards:
-                    print('PREFLOP')
-                    game_stage = 0
-                elif len(board_cards) == 3:
-                    print('FLOP')
-                    game_stage = 1
-                elif len(board_cards) == 4:
-                    print('TURN')
-                    game_stage = 2
-                else:
-                    print('RIVER')
-                    game_stage = 3
 
                 if (self.flags["street"] > game_stage
                         or (self.flags["hole1"] != holecard1 and self.flags["hole2"] != holecard2)):
@@ -661,10 +661,9 @@ class PokerBot:
             num_opponents = 1
         return num_opponents
 
-    def get_pot(self, stack_size):
+    def get_pot(self, stack_size, game_stage):
         pot = self.find_element('pot.png')
         pot_value = 0
-        middle_pot_value = 0
         if pot:
             pot_value += self.str_to_int(
                 self.ocr_text_from_image((pot[2], pot[1], pot[2] + 75, pot[3] - 2), blur_size=1,
@@ -695,8 +694,10 @@ class PokerBot:
         middle_pot_value = pot_value
 
         popups = ["allinpopup.png", "betpopup.png", "bigpopup.png", "smallpopup.png", "raisepopup.png",
-                  "callpopup.png", "postpopup.png", "popup.png"]
+                  "callpopup.png", "postpopup.png", "checkpopup.png", "popup.png"]
         for popup in popups:
+            if popup == "checkpopup.png" and game_stage > 0:
+                continue
             popup_locations = self.find_elements(popup, search_area=(233, 312, 1148, 724),
                                                  confidence_threshold=0.8)
             if popup_locations:
