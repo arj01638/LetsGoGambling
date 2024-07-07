@@ -6,12 +6,10 @@ from PokerHelper import *
 
 def get_threshold(board_cards, num_opponents, game_stage, pot_odds, going_all_in, current_bet, big_blind, pot_value,
                   current_stack,
-                  middle_pot_value, flags):
+                  middle_pot_value, flags, hand_rank):
     # odds of winning if the winner were randomly decided among all players
     lotto_chance = 1 / (1 + num_opponents)
     print(f"Chance of winning if randomly decided: {lotto_chance}")
-
-    threatening_pot_odds_threshold = 1 / 3.0
 
     flush_draw = has_flush_draw(board_cards)
     if flush_draw:
@@ -24,28 +22,38 @@ def get_threshold(board_cards, num_opponents, game_stage, pot_odds, going_all_in
         else:
             threshold = 7
         # otherwise, the bot will wayyyyy overvalue low flushes like 4 high
+
     elif current_bet >= middle_pot_value and game_stage != 0:
-        print("Threatening bet, someone bet pot, assume 2 pair or better")
+        print("Someone bet >=pot, assume 2 pair or better")
         threshold = 7
     elif current_bet > big_blind * 10 and game_stage == 0:
-        print("Threatening bet, someone bet > 10 BB, assume high percentile hand")
+        print("Someone bet > 10 BB preflop, assume high percentile hand")
         threshold = 7
-    elif current_bet > max(middle_pot_value // 2, 10 * big_blind) and flags["reraise"]:
-        print("Threatening bet, reraised us with a large bet, assume half the time 2 pair or better")
-        threshold = 7.5
     elif pot_odds < lotto_chance:
         print("Pot odds less than random chance")
         threshold = 8 if ((game_stage == 1 and (current_bet > 0))
                           or (game_stage == 0 and current_bet > (3 * big_blind))
                           or game_stage >= 2) else 9
-        if game_stage == 3 and middle_pot_value >= 50 * big_blind or current_bet >= 50 * big_blind:
-            threshold = 7.5
-    elif lotto_chance <= pot_odds <= threatening_pot_odds_threshold:
-        print(f"Pot odds less than {threatening_pot_odds_threshold}")
-        threshold = 9 if game_stage == 0 and current_bet <= 3 * big_blind else 8
     else:
         print("Scary bet!")
         threshold = 7 if game_stage == 3 else 8
+
+    if game_stage > 0:
+        if hand_rank <= 7:
+            if threshold == 9:
+                threshold = min(8, threshold)
+        if current_bet >= 0.75 * middle_pot_value and middle_pot_value >= 50 * big_blind:
+            print("Big pot, bet over 3/4 pot, assume 2 pair or better")
+            threshold = min(7, threshold)
+        elif threshold >= 8 and flags["reraise"] and current_bet > 0:
+            print("Reraised, assume 2 pair or better 50% of the time")
+            threshold = min(7.5, threshold)
+        elif game_stage == 3 and middle_pot_value >= 50 * big_blind or current_bet >= 50 * big_blind:
+            print("River, big pot, big bet, assume 2 pair or better 50% of the time")
+            threshold = min(7.5, threshold)
+        elif current_bet >= 0.5 * middle_pot_value:
+            print("Bet over half pot, assume 2 pair or better 50% of the time")
+            threshold = min(7.5, threshold)
 
     threshold = min(flags["threshold"], threshold)
 
@@ -134,20 +142,25 @@ def make_decision(hole_cards, board_cards, stack_size, pot_value, current_bet,
         elif is_in_percentile(10, hole_cards, num_opponents > 1):
             raise_factor = 5
         elif is_in_percentile(5, hole_cards, num_opponents > 1):
+            raise_factor = 5
             if random.random() < 0.2:
                 print("Shoving because 20% chance and top 5% hand")
                 raise_factor = stack_size / big_blind
         ideal_bet = raise_factor * big_blind
-        if current_bet < 0.75 * ideal_bet:
+        if current_bet < 0.75 * ideal_bet and ideal_bet >= min_bet:
             print("Preflop raise")
             return f"bet {min(int(ideal_bet), stack_size)}"
         else:
             print("Preflop call/check")
             return "call"
 
+    if game_stage > 0:
+        _, hand_rank = evaluate_hand(hole_cards, board_cards)
+    else:
+        hand_rank = 9
     threshold = get_threshold(board_cards, num_opponents, game_stage, pot_odds, going_all_in, current_bet, big_blind,
                               pot_value,
-                              stack_size, middle_pot_value, flags)
+                              stack_size, middle_pot_value, flags, hand_rank)
     print(f"Threshold: {threshold}")
 
     threshold_players = max(2, -(num_opponents // -2))
@@ -159,12 +172,6 @@ def make_decision(hole_cards, board_cards, stack_size, pot_value, current_bet,
         threshold_players += 1
     if threshold_players > num_opponents:
         threshold_players = num_opponents
-
-    if game_stage > 0:
-        _, hand_rank = evaluate_hand(hole_cards, board_cards)
-        if hand_rank <= 7:
-            if threshold == 9:
-                threshold = 8
 
     print(f"Calculating equity with\n\t"
           f"Opponents: {num_opponents}\n\t"
@@ -233,12 +240,12 @@ def make_decision(hole_cards, board_cards, stack_size, pot_value, current_bet,
         if current_bet == 0:
             bluff_frequency = 0.3 * (2 if flags["bluffing"] else 1) + 0.1 if game_stage != 0 else 0
             if pot_value <= max(0.025 * stack_size, 12) and random.random() < bluff_frequency:
-                print(f"Bluffing because no bet, small pot, and {bluff_frequency}% hit")
+                print(f"Bluffing because no bet, small pot, and {bluff_frequency * 100}% hit")
                 flags["bluffing"] = True
                 return f"bet {int((0.5 + (0.5 * random.random())) * pot_value)}"
             elif (pot_value <= max(0.05 * stack_size, 16) * big_blind
                   and game_stage == 3 and random.random() < bluff_frequency):
-                print(f"Bluffing because no bet, river, small pot and {bluff_frequency}% hit")
+                print(f"Bluffing because no bet, river, small pot and {bluff_frequency * 100}% hit")
                 flags["bluffing"] = True
                 return f"bet {int((0.5 + (0.5 * random.random())) * pot_value)}"
 
