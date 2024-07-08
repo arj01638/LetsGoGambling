@@ -25,6 +25,7 @@ class PokerBot:
         # but i specify it here just so it doesn't potentially bug out the first hand or two
 
         self.screenshot = None
+        self.gray_screenshot = None
 
         # please don't make fun of me i just wanted this done
         self.holecard1_value_location = (45, 890, 52 + 70, 890 + 78)
@@ -71,6 +72,8 @@ class PokerBot:
         board_imgs = ['boardspade.png', 'boardclub.png', 'boardheart.png', 'boarddiamond.png']
         self.hole_suits = {}
         self.board_suits = {}
+        self.templates = {}
+        self.graytemplates = {}
 
         for i, suit in enumerate(suits):
             img_name = hole_imgs[i]
@@ -86,8 +89,19 @@ class PokerBot:
             _, suit_img = cv2.threshold(suit_img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
             self.board_suits[suit] = suit_img
 
+    def get_template(self, image_path, grayscale):
+        if not grayscale:
+            if image_path not in self.templates:
+                self.templates[image_path] = cv2.imread(image_path, cv2.IMREAD_COLOR)
+            return self.templates[image_path]
+        else:
+            if image_path not in self.graytemplates:
+                self.graytemplates[image_path] = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+            return self.graytemplates[image_path]
+
     def take_screenshot(self):
         self.screenshot = ImageGrab.grab()
+        self.gray_screenshot = cv2.cvtColor(np.array(self.screenshot), cv2.COLOR_RGB2GRAY)
 
     def click_element(self, location, clicks=1):
         # click at average X and Y of location tuple
@@ -292,10 +306,10 @@ class PokerBot:
             return False
 
     def find_element(self, image_path, search_area=None, confidence_threshold=0.9):
-        template = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+        template = self.get_template(image_path, grayscale=True)
         if search_area:
             template = template[search_area[1]:search_area[3], search_area[0]:search_area[2]]
-        screenshot = cv2.cvtColor(np.array(self.screenshot), cv2.COLOR_RGB2GRAY)
+        screenshot = self.gray_screenshot
         confidence, location = self.min_max_loc(template, screenshot)
         if confidence > confidence_threshold:
             return location
@@ -305,7 +319,7 @@ class PokerBot:
     # returns list of location each in the form of (left, top, right, bottom)
     def find_elements(self, image_path, search_area=None, confidence_threshold=0.9, block_wide=False):
         # search for all occurrences of the image and return a list of them
-        template = cv2.imread(image_path, cv2.IMREAD_COLOR)
+        template = self.get_template(image_path, grayscale=False)
 
         screenshot = self.screenshot.crop(search_area) if search_area else self.screenshot
 
