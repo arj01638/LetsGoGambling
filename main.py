@@ -181,7 +181,7 @@ class PokerBot:
         if flip:
             image = cv2.flip(image, -1)
 
-        if not invert and not colored_text:
+        if not invert and not colored_text or brightness != 3.0:
             image = cv2.convertScaleAbs(image, alpha=brightness, beta=0)
 
         if contrast > 0:
@@ -494,23 +494,9 @@ class PokerBot:
                           f"\n\tsaving screenshot as {file}")
                     self.screenshot.save(file)
 
-                approximate_pot = True
-                if board_cards == [] and current_bet >= 10 * self.big_blind:
-                    approximate_pot = False
-                if current_bet >= stack_size:
-                    approximate_pot = False
-                if current_bet > self.big_blind * 5 and current_bet >= middle_pot_value:
-                    approximate_pot = False
-
-                if approximate_pot:
-                    approximate_pot = math.floor(((num_opponents + 1) * current_bet) /
-                                                 (1.5 if current_bet != self.big_blind else 1))
-                    if pot_value < approximate_pot:
-                        print(f"Pot value less than {approximate_pot}, setting it to that")
-                        pot_value = approximate_pot
-
                 if (self.flags["street"] > game_stage
-                        or (self.flags["hole1"] != holecard1 and self.flags["hole2"] != holecard2)):
+                        or (self.flags["hole1"] != holecard1 or self.flags["hole2"] != holecard2)):
+                    print("New hand...")
                     self.flags["threshold"] = 9
                     self.flags["bluffing"] = False
                     self.flags["betting"] = False
@@ -708,6 +694,7 @@ class PokerBot:
                             (center_x - 40, popup_location[3], center_x + 40,
                              popup_location[3] + 25), blur_size=1,
                             invert=True,
+                            brightness=0.5,
                             contrast=3, erode=True))
                     if self.debug:
                         print(
@@ -774,13 +761,13 @@ class PokerBot:
             if bet_amount >= pot_value:
                 peak2_weight -= 2
             if game_stage == 0:
-                peak2_weight += 3
+                peak2_weight += 5
             if current_bet <= self.big_blind and game_stage != 0:
-                peak2_weight += 3
+                peak2_weight += 5
 
         samples = 1000
         peak1 = np.random.normal(loc=0, scale=0.2, size=int(samples / 2))
-        peak2 = np.random.normal(loc=3, scale=1, size=int(samples / peak2_weight))
+        peak2 = np.random.normal(loc=2.5, scale=1, size=int(samples / peak2_weight))
         bimodal = np.concatenate([peak1, peak2])
         density = gaussian_kde(bimodal)
 

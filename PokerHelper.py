@@ -175,7 +175,7 @@ def calculate_equity(hole_cards, num_opponents, community_cards=None, simulation
         elif threshold_hand_strength == 8:
             percentile = 20
         else:
-            percentile = 5
+            percentile = 10
 
         threshold_satisfieds = 0
 

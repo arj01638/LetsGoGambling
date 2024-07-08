@@ -35,8 +35,11 @@ def get_threshold(board_cards, num_opponents, game_stage, pot_odds, going_all_in
                           or (game_stage == 0 and current_bet > (3 * big_blind))
                           or game_stage >= 2) else 9
     else:
-        print("Scary bet!")
-        threshold = 7 if game_stage == 3 else 8
+        print("Pot odds greater than random chance")
+        if game_stage == 0:
+            threshold = 9 if current_bet <= 3 * big_blind else 8
+        else:
+            threshold = 7.5 if game_stage == 3 else 8
 
     if game_stage > 0:
         if hand_rank <= 7:
@@ -45,7 +48,7 @@ def get_threshold(board_cards, num_opponents, game_stage, pot_odds, going_all_in
         if current_bet >= 0.75 * middle_pot_value and middle_pot_value >= 50 * big_blind:
             print("Big pot, bet over 3/4 pot, assume 2 pair or better")
             threshold = min(7, threshold)
-        elif threshold >= 8 and flags["reraise"] and current_bet > 0:
+        elif threshold >= 8 and flags["reraise"] and current_bet > big_blind * 2:
             print("Reraised, assume 2 pair or better 50% of the time")
             threshold = min(7.5, threshold)
         elif game_stage == 3 and middle_pot_value >= 50 * big_blind or current_bet >= 50 * big_blind:
@@ -92,10 +95,29 @@ def make_decision(hole_cards, board_cards, stack_size, pot_value, current_bet,
     else:
         game_stage = 3
 
+    approximate_pot = True
+    if board_cards == [] and current_bet >= 10 * big_blind:
+        approximate_pot = False
+    if current_bet >= stack_size:
+        approximate_pot = False
+    if current_bet > big_blind * 5 and current_bet >= middle_pot_value:
+        approximate_pot = False
+
+    if approximate_pot:
+        approximate_pot = math.floor(((num_opponents + 1) * current_bet) /
+                                     (1.5 if current_bet != big_blind else 1))
+        if pot_value < approximate_pot:
+            print(f"Pot value less than {approximate_pot}, setting it to that")
+            pot_value = approximate_pot
+
     going_all_in = current_bet >= stack_size
 
     pot_odds = current_bet / (pot_value + current_bet)
     print(f"Pot odds: {pot_odds}")
+
+    if game_stage == 0 and current_bet <= 5 * big_blind:
+        pot_odds = pot_odds / 2
+        print(f"Treating pot odds as {pot_odds} because preflop and low bet")
 
     bb_stack = stack_size / big_blind
     print(f"Stack size: {bb_stack} BBs ({stack_size})")
@@ -130,22 +152,25 @@ def make_decision(hole_cards, board_cards, stack_size, pot_value, current_bet,
             if random.random() < 0.5 and bb_stack > 50:
                 if is_in_percentile(60, hole_cards, num_opponents > 1):
                     play_this_hand = True
-                print("50% chance to play hand outside normal percentile hit")
+                    print("50% chance to play hand outside normal percentile hit")
         if not play_this_hand:
             print("Folding hand outside percentile")
             return fold_or_check(current_bet)
 
     if game_stage == 0 and current_bet <= big_blind:
         raise_factor = 1
-        if is_in_percentile(30, hole_cards, num_opponents > 1):
-            raise_factor = 3
-        elif is_in_percentile(10, hole_cards, num_opponents > 1):
-            raise_factor = 5
-        elif is_in_percentile(5, hole_cards, num_opponents > 1):
-            raise_factor = 5
+        if is_in_percentile(5, hole_cards, num_opponents > 1):
+            raise_factor = 6
             if random.random() < 0.2:
                 print("Shoving because 20% chance and top 5% hand")
                 raise_factor = stack_size / big_blind
+            if num_opponents >= 5 and random.random() < 0.3:
+                print("Shoving because 50% chance, >=5 ops, and top 5% hand")
+                raise_factor = stack_size / big_blind
+        elif is_in_percentile(10, hole_cards, num_opponents > 1):
+            raise_factor = 5
+        elif is_in_percentile(30, hole_cards, num_opponents > 1):
+            raise_factor = 3
         ideal_bet = raise_factor * big_blind
         if current_bet < 0.75 * ideal_bet and ideal_bet >= min_bet:
             print("Preflop raise")
@@ -153,6 +178,8 @@ def make_decision(hole_cards, board_cards, stack_size, pot_value, current_bet,
         else:
             print("Preflop call/check")
             return "call"
+    elif game_stage == 0:
+        pass
 
     if game_stage > 0:
         _, hand_rank = evaluate_hand(hole_cards, board_cards)
@@ -163,10 +190,12 @@ def make_decision(hole_cards, board_cards, stack_size, pot_value, current_bet,
                               stack_size, middle_pot_value, flags, hand_rank)
     print(f"Threshold: {threshold}")
 
-    threshold_players = max(2, -(num_opponents // -2))
+    threshold_players = min(max(2, -(num_opponents // -2)), 3)
     if threshold <= 7 and game_stage > 0:
         threshold_players = 1
-    if threshold <= 8 and game_stage == 0 and pot_value < 2 * current_bet:
+    if threshold == 8 and game_stage == 0:
+        threshold_players = 1
+    if threshold < 8 and game_stage == 0 and pot_value < 2 * current_bet:
         threshold_players = 1
     if game_stage == 3:
         threshold_players += 1
@@ -218,6 +247,10 @@ def make_decision(hole_cards, board_cards, stack_size, pot_value, current_bet,
         # calculating ideal bet becomes negative after 50% equity,
         # and you want to bet not a great amount usually anyway right?
         betting_equity = equity / 2
+        if flags["betting"] and game_stage == 1 and current_bet == 0:
+            print("C-betting")
+            betting_equity = min(0.4, equity)
+
     if equity > 0.9:
         ideal_bet = stack_size
     elif equity < (1 / (num_opponents + 1) / 2):
@@ -257,7 +290,7 @@ def make_decision(hole_cards, board_cards, stack_size, pot_value, current_bet,
         if current_bet == 0:
             if random.random() < 0.3 and equity < 0.5:
                 print("Slow rolling because no bet and 30% hit and <50% equity")
-                return "call"
+                ideal_bet = ideal_bet / 2
         if ideal_bet < 0.1 * pot_value:
             print("Not worth raising")
             return "call"
