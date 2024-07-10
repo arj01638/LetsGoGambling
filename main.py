@@ -13,14 +13,14 @@ from scipy.stats import gaussian_kde
 from PokerDecisionMaker import *
 from PIL import Image, ImageEnhance
 
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+# pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
 
 class PokerBot:
     def __init__(self):
         self.debug = False  # add debug windows and console messages
         self.skip_cards = False  # skip card detection
-        self.continuous = True  # determines whether it'll loop or just run once
+        self.continuous = False  # determines whether it'll loop or just run once
         self.big_blind = 200  # it will automatically determine this by constantly checking for the minimum bet
         # but i specify it here just so it doesn't potentially bug out the first hand or two
 
@@ -279,7 +279,7 @@ class PokerBot:
             # save the image
             cv2.imwrite('binary.png', binary)
 
-        allowed_chars = "0123456789,kMAKQJO"
+        allowed_chars = "0123456789,.kMAKQJO"
         custom_config = f'--oem 3 --psm {str(psm)} -c tessedit_char_whitelist=' + allowed_chars
         result = pytesseract.image_to_string(binary, lang='eng', config=custom_config).strip()
         if self.debug:
